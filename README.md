@@ -1,57 +1,115 @@
-# Sample Hardhat 3 Beta Project (`node:test` and `viem`)
+# Chainlink Mirror – Cross-Chain Oracle Solution for Reactive Network
 
-This project showcases a Hardhat 3 Beta project using the native Node.js test runner (`node:test`) and the `viem` library for Ethereum interactions.
+## Overview
 
-To learn more about the Hardhat 3 Beta, please visit the [Getting Started guide](https://hardhat.org/docs/getting-started#getting-started-with-hardhat-3). To share your feedback, join our [Hardhat 3 Beta](https://hardhat.org/hardhat3-beta-telegram-group) Telegram group or [open an issue](https://github.com/NomicFoundation/hardhat/issues/new) in our GitHub issue tracker.
+**Chainlink Mirror** is a cross-chain price feed solution built to demonstrate the power of **Reactive Smart Contracts** in EVM-compatible networks.  
+It mirrors official Chainlink price feeds from an **origin chain** to a **destination chain**, exposing a `AggregatorV3Interface`-compatible interface for downstream applications.
 
-## Project Overview
+Unlike traditional Chainlink Automation, this project showcases a fully **on-chain event-driven architecture** using **Reactive Network smart contracts**. This allows automated reactions to cross-chain events without relying on off-chain triggers.
 
-This example project includes:
+---
 
-- A simple Hardhat configuration file.
-- Foundry-compatible Solidity unit tests.
-- TypeScript integration tests using [`node:test`](nodejs.org/api/test.html), the new Node.js native test runner, and [`viem`](https://viem.sh/).
-- Examples demonstrating how to connect to different types of networks, including locally simulating OP mainnet.
+## Context: Why This Matters
 
-## Usage
+Reactive Network’s goal is to **replace off-chain automation systems** (like Chainlink Automation) with fully on-chain reactive contracts.  
+- **Traditional Approach (Chainlink):** Off-chain oracles detect events → call contracts → trigger actions.  
+- **Reactive Approach:** Contracts themselves react to events emitted by other contracts or chains in real-time.  
 
-### Running Tests
+By implementing cross-chain oracle mirroring, this project serves as a **real-world demonstration** of Reactive Network’s automation capabilities and provides a robust example for developers to learn from.
 
-To run all the tests in the project, execute the following command:
+---
+## Flow Overview
 
-```shell
-npx hardhat test
-```
+Origin Chain (Sepolia)
+┌───────────────────────────┐
+│ Chainlink ETH/USD Feed    │
+│ Emits AnswerUpdated event │
+└──────────────┬────────────┘
+               │
+               ▼
+Reactive Network (Your RSC)
+┌───────────────────────────┐
+│ ChainlinkFeedReactor      │
+│ react() is triggered      │
+│ Processes and forwards    │
+└──────────────┬────────────┘
+               ▼
+Destination Chain (Base Sepolia)
+┌───────────────────────────┐
+│ FeedProxy receives update │
+│ latestRoundData() updated │
+└──────────────┬────────────┘
+               ▼
+Applications query price → DeFi logic executed
 
-You can also selectively run the Solidity or `node:test` tests:
 
-```shell
-npx hardhat test solidity
-npx hardhat test nodejs
-```
+## Features
 
-### Make a deployment to Sepolia
+- **FeedProxy Contract**  
+  Stores round data from the origin chain and exposes `latestRoundData()` for consumption by dApps.
 
-This project includes an example Ignition module to deploy the contract. You can deploy this module to a locally simulated chain or to Sepolia.
+- **ChainlinkFeedReactor (Reactive Smart Contract)**  
+  Listens for events from the origin chain feed, processes data, and forwards updates to the destination chain.
 
-To run the deployment to a local chain:
+- **Minimal React Frontend**  
+  Visualizes round data, latest price, and allows simulation of feed updates.
 
-```shell
-npx hardhat ignition deploy ignition/modules/Counter.ts
-```
+- **Cross-Chain Event Handling**  
+  Demonstrates a fully on-chain workflow that reacts automatically to updates from the origin chain.
 
-To run the deployment to Sepolia, you need an account with funds to send the transaction. The provided Hardhat configuration includes a Configuration Variable called `SEPOLIA_PRIVATE_KEY`, which you can use to set the private key of the account you want to use.
+---
 
-You can set the `SEPOLIA_PRIVATE_KEY` variable using the `hardhat-keystore` plugin or by setting it as an environment variable.
+## Technical Architecture
 
-To set the `SEPOLIA_PRIVATE_KEY` config variable using `hardhat-keystore`:
+### Contracts
 
-```shell
-npx hardhat keystore set SEPOLIA_PRIVATE_KEY
-```
+1. **FeedProxy (Destination Chain)**
+   - Stores mirrored feed data
+   - Implements `AggregatorV3Interface`
+   - Provides `latestRoundData()` for apps
 
-After setting the variable, you can run the deployment with the Sepolia network:
+2. **ChainlinkFeedReactor (Reactive Smart Contract)**
+   ```solidity
+   function react(uint256 roundId, int256 answer, uint256 updatedAt) external {
+       // Receives event from origin feed
+       // Processes and validates data
+       // Sends callback to FeedProxy
+   }
+                             └─────────────────┘
 
-```shell
-npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
-```
+
+
+chainlink-mirror/
+├── contracts/ # Solidity contracts
+├── scripts/ # Deployment and feed update scripts
+├── test/ # Unit and integration tests
+├── frontend/ # Minimal React frontend
+├── hardhat.config.ts # Hardhat configuration
+└── package.json # Project dependencies
+
+
+---
+
+## Tech Stack
+
+- **Smart Contracts:** Solidity, Hardhat, AggregatorV3Interface  
+- **Blockchain:** EVM-compatible networks (Ethereum, Polygon, Arbitrum, etc.)  
+- **Frontend:** React, TypeScript, Ethers.js  
+- **Testing:** Hardhat + Mocha/Chai  
+
+---
+
+## Getting Started
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/YOUR_USERNAME/chainlink-mirror.git
+cd chainlink-mirror
+
+npm install
+npx hardhat compile
+
+cd frontend
+npm install
+npm run dev
