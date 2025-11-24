@@ -1,35 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@reactive-network/contracts/src/AbstractReactive.sol";
+import "../interfaces/AbstractReactive.sol";
+import "../interfaces/ISystemContract.sol";
 
-/**
- * @title ChainlinkFeedReactor
- * @notice Reactive Smart Contract for mirroring Chainlink price feeds cross-chain
- * @dev Deployed on Reactive Network - automatically reacts to Chainlink events
- * 
- * KEY INNOVATION: This contract eliminates the need for:
- * - Chainlink Automation (saves ~360 LINK/month)
- * - Off-chain keeper bots (zero infrastructure)
- * - Manual triggering (fully autonomous)
- * - LINK token funding (uses $REACT instead)
- * 
- * HOW IT WORKS:
- * 1. Subscribe to Chainlink's AnswerUpdated events on origin chain
- * 2. Reactive Network automatically calls react() when event fires
- * 3. Smart filtering decides if update should be forwarded
- * 4. Callback sent to destination chain to update FeedProxy
- * 
- * COMPETITIVE ADVANTAGE:
- * - 98.5% cheaper than Chainlink Automation + CCIP
- * - 10-30 second latency vs 1-3 minute latency
- * - Zero maintenance vs weekly LINK funding
- * - Event-driven (reactive) vs polling-based (proactive)
- */
+
+
+
 contract ChainlinkFeedReactor is AbstractReactive {
-    
-    // ============ Events ============
-    
+
     event FeedRegistered(
         bytes32 indexed feedId,
         uint64 originChainId,
@@ -51,6 +30,13 @@ contract ChainlinkFeedReactor is AbstractReactive {
         uint80 roundId,
         int256 price,
         SkipReason reason
+    );
+    
+    event Callback(
+        uint64 destinationChainId,
+        address destinationProxy,
+        uint256 value,
+        bytes payload
     );
     
     enum UpdateReason {
@@ -113,6 +99,14 @@ contract ChainlinkFeedReactor is AbstractReactive {
     // Access control
     address public owner;
     
+    // Reactive Network system contract
+    ISystemContract public service;
+    
+    // VM flag - set by Reactive Network infrastructure
+    // false = deployed on Reactive Network (has system contract)
+    // true = deployed in ReactVM (no system contract)
+    bool private vm;
+    
     // ============ Modifiers ============
     
     modifier onlyOwner() {
@@ -122,8 +116,62 @@ contract ChainlinkFeedReactor is AbstractReactive {
     
     // ============ Constructor ============
     
-    constructor() {
+    /**
+     * @notice Constructor for ChainlinkFeedReactor
+     * @param _service Address of Reactive Network's system contract
+     * @dev The system contract address is provided by Reactive Network
+     *      For testnet (Lasna), check Reactive Network documentation for the address
+     */
+    constructor(address _service) payable {
+        if (_service != address(0)) {
+            service = ISystemContract(payable(_service));
+        }
         owner = msg.sender;
+        vm = (_service == address(0));
+    }
+    
+    // ============ System Contract Management ============
+    
+    /**
+     * @notice Set the system contract address (if not set during deployment)
+     * @param _service Address of Reactive Network's system contract
+     * @dev Allows setting system contract after deployment
+     *      Useful if system contract address wasn't known at deployment time
+     */
+    function setSystemContract(address _service) external onlyOwner {
+        require(_service != address(0), "Invalid system contract address");
+        service = ISystemContract(payable(_service));
+        vm = false; // If system contract is set, we're on Reactive Network
+    }
+    
+    /**
+     * @notice Manually subscribe to events (if system contract was set after deployment)
+     * @param feedId The feed ID to subscribe for
+     * @dev Call this after setting system contract if feed was registered before system contract was set
+     */
+    function subscribeFeed(bytes32 feedId) external onlyOwner {
+        require(address(service) != address(0), "System contract not set");
+        FeedConfig memory config = feeds[feedId];
+        require(config.feedAddress != address(0), "Feed not registered");
+        
+        if (!vm && address(service) != address(0)) {
+            service.subscribe(
+                uint256(config.originChainId),
+                config.feedAddress,
+                uint256(ANSWER_UPDATED_TOPIC_0),
+                REACTIVE_IGNORE,
+                REACTIVE_IGNORE,
+                REACTIVE_IGNORE
+            );
+        }
+    }
+    
+    /**
+     * @notice Get system contract address
+     * @return The system contract address (address(0) if not set)
+     */
+    function getSystemContract() external view returns (address) {
+        return address(service);
     }
     
     // ============ Feed Management ============
@@ -175,17 +223,20 @@ contract ChainlinkFeedReactor is AbstractReactive {
         
         feedIds.push(feedId);
         
-        // Subscribe to Chainlink's AnswerUpdated events
+        // Subscribe to Chainlink's AnswerUpdated events through Reactive Network's system contract
+        // Only subscribe if deployed on Reactive Network (not in ReactVM)
         // This is the MAGIC - Reactive Network will now automatically
         // call react() whenever this event fires!
-        subscribe(
-            originChainId,              // Which chain to monitor
-            feedAddress,                // Which contract to monitor
-            ANSWER_UPDATED_TOPIC_0,     // Which event to monitor (AnswerUpdated)
-            REACTIVE_IGNORE,            // topic1 (current price - we read from data)
-            REACTIVE_IGNORE,            // topic2 (roundId - we read from data)
-            REACTIVE_IGNORE             // topic3 (not used)
-        );
+        if (!vm && address(service) != address(0)) {
+            service.subscribe(
+                uint256(originChainId),              // Which chain to monitor
+                feedAddress,                         // Which contract to monitor
+                uint256(ANSWER_UPDATED_TOPIC_0),     // Which event to monitor (AnswerUpdated)
+                REACTIVE_IGNORE,                     // topic1 (current price - we read from data)
+                REACTIVE_IGNORE,                     // topic2 (roundId - we read from data)
+                REACTIVE_IGNORE                      // topic3 (not used)
+            );
+        }
         
         emit FeedRegistered(
             feedId,
