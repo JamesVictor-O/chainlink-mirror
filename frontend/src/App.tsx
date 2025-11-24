@@ -1,12 +1,7 @@
-
-import FeedProxyViewer from "./FeedProxy";
+import Dashboard from "./Dashboard";
 
 function App() {
-  return (
-    <div>
-      <FeedProxyViewer />
-    </div>
-  );
+  return <Dashboard />;
 }
 
 export default App;
