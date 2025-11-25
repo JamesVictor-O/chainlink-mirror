@@ -11,37 +11,38 @@ Unlike traditional Chainlink Automation, this project showcases a fully **on-cha
 
 ## Context: Why This Matters
 
-Reactive Network’s goal is to **replace off-chain automation systems** (like Chainlink Automation) with fully on-chain reactive contracts.  
-- **Traditional Approach (Chainlink):** Off-chain oracles detect events → call contracts → trigger actions.  
-- **Reactive Approach:** Contracts themselves react to events emitted by other contracts or chains in real-time.  
+Reactive Network’s goal is to **replace off-chain automation systems** (like Chainlink Automation) with fully on-chain reactive contracts.
+
+- **Traditional Approach (Chainlink):** Off-chain oracles detect events → call contracts → trigger actions.
+- **Reactive Approach:** Contracts themselves react to events emitted by other contracts or chains in real-time.
 
 By implementing cross-chain oracle mirroring, this project serves as a **real-world demonstration** of Reactive Network’s automation capabilities and provides a robust example for developers to learn from.
 
 ---
+
 ## Flow Overview
 
 Origin Chain (Sepolia)
 ┌───────────────────────────┐
-│ Chainlink ETH/USD Feed    │
+│ Chainlink ETH/USD Feed │
 │ Emits AnswerUpdated event │
 └──────────────┬────────────┘
-               │
-               ▼
+│
+▼
 Reactive Network (Your RSC)
 ┌───────────────────────────┐
-│ ChainlinkFeedReactor      │
-│ react() is triggered      │
-│ Processes and forwards    │
+│ ChainlinkFeedReactor │
+│ react() is triggered │
+│ Processes and forwards │
 └──────────────┬────────────┘
-               ▼
+▼
 Destination Chain (Base Sepolia)
 ┌───────────────────────────┐
 │ FeedProxy receives update │
 │ latestRoundData() updated │
 └──────────────┬────────────┘
-               ▼
+▼
 Applications query price → DeFi logic executed
-
 
 ## Features
 
@@ -64,6 +65,7 @@ Applications query price → DeFi logic executed
 ### Contracts
 
 1. **FeedProxy (Destination Chain)**
+
    - Stores mirrored feed data
    - Implements `AggregatorV3Interface`
    - Provides `latestRoundData()` for apps
@@ -76,8 +78,7 @@ Applications query price → DeFi logic executed
        // Sends callback to FeedProxy
    }
                              └─────────────────┘
-
-
+   ```
 
 chainlink-mirror/
 ├── contracts/ # Solidity contracts
@@ -87,15 +88,14 @@ chainlink-mirror/
 ├── hardhat.config.ts # Hardhat configuration
 └── package.json # Project dependencies
 
-
 ---
 
 ## Tech Stack
 
-- **Smart Contracts:** Solidity, Hardhat, AggregatorV3Interface  
-- **Blockchain:** EVM-compatible networks (Ethereum, Polygon, Arbitrum, etc.)  
-- **Frontend:** React, TypeScript, Ethers.js  
-- **Testing:** Hardhat + Mocha/Chai  
+- **Smart Contracts:** Solidity, Hardhat, AggregatorV3Interface
+- **Blockchain:** EVM-compatible networks (Ethereum, Polygon, Arbitrum, etc.)
+- **Frontend:** React, TypeScript, Ethers.js
+- **Testing:** Hardhat + Mocha/Chai
 
 ---
 
@@ -113,3 +113,51 @@ npx hardhat compile
 cd frontend
 npm install
 npm run dev
+```
+
+### 2. Deploy Contracts
+
+#### Deploy ChainlinkFeedReactor to Reactive Network
+
+See the comprehensive deployment guide: [scripts/DEPLOYMENT.md](scripts/DEPLOYMENT.md)
+
+**Quick Start (Hardhat):**
+
+```bash
+# Set your private key
+export REACTIVE_PRIVATE_KEY=your_private_key_here
+
+# Deploy to testnet
+npx hardhat run scripts/deploy.ts --network reactiveTestnet
+
+# Deploy to mainnet
+npx hardhat run scripts/deploy.ts --network reactiveMainnet
+```
+
+**Alternative (Foundry - Recommended for Production):**
+
+```bash
+# Set your private key
+export REACTIVE_PRIVATE_KEY=your_private_key_here
+
+# Deploy to testnet
+./scripts/deploy-reactive.sh testnet
+
+# Deploy to mainnet
+./scripts/deploy-reactive.sh mainnet
+```
+
+The deployment scripts will:
+
+- Deploy the contract to Reactive Network
+- Provide contract address and explorer links
+- (Foundry script) Automatically verify the contract on Sourcify
+- Provide next steps for feed registration
+
+#### Deploy FeedProxy to Destination Chain
+
+Deploy FeedProxy to your target destination chain (e.g., Base Sepolia, Arbitrum, etc.):
+
+```bash
+npx hardhat run scripts/deploy-feedproxy.ts --network <network>
+```
