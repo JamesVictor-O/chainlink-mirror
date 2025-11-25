@@ -3,53 +3,10 @@ pragma solidity ^0.8.19;
 
 import "../interfaces/AbstractReactive.sol";
 import "../interfaces/ISystemContract.sol";
+import "../interfaces/IReactive.sol";
+import "../events/IChainlinkFeedReactorEvents.sol";
 
-
-
-
-contract ChainlinkFeedReactor is AbstractReactive {
-
-    event FeedRegistered(
-        bytes32 indexed feedId,
-        uint64 originChainId,
-        address feedAddress,
-        uint64 destinationChainId,
-        address destinationProxy
-    );
-    
-    event UpdateForwarded(
-        bytes32 indexed feedId,
-        uint80 roundId,
-        int256 price,
-        uint256 updatedAt,
-        UpdateReason reason
-    );
-    
-    event UpdateSkipped(
-        bytes32 indexed feedId,
-        uint80 roundId,
-        int256 price,
-        SkipReason reason
-    );
-    
-    event Callback(
-        uint64 destinationChainId,
-        address destinationProxy,
-        uint256 value,
-        bytes payload
-    );
-    
-    enum UpdateReason {
-        FirstUpdate,
-        DeviationThreshold,
-        HeartbeatExpired
-    }
-    
-    enum SkipReason {
-        InsufficientDeviation,
-        WithinHeartbeat,
-        InvalidData
-    }
+contract ChainlinkFeedReactor is AbstractReactive, IReactive, IChainlinkFeedReactorEvents {
     
     // ============ Constants ============
     
@@ -75,6 +32,7 @@ contract ChainlinkFeedReactor is AbstractReactive {
         uint256 heartbeat;          // Seconds
         int256 lastSentPrice;
         uint256 lastSentTime;
+        uint80 lastProcessedRoundId; // Track last processed round for polling
         bool active;
     }
     
@@ -89,23 +47,16 @@ contract ChainlinkFeedReactor is AbstractReactive {
     
     // feedId => config
     mapping(bytes32 => FeedConfig) public feeds;
-    
     // feedId => metrics
     mapping(bytes32 => FeedMetrics) public metrics;
-    
     // List of all feed IDs
     bytes32[] public feedIds;
     
     // Access control
     address public owner;
     
-    // Reactive Network system contract
-    ISystemContract public service;
-    
-    // VM flag - set by Reactive Network infrastructure
-    // false = deployed on Reactive Network (has system contract)
-    // true = deployed in ReactVM (no system contract)
-    bool private vm;
+    // Reactive Network system contract (required)
+    ISystemContract public immutable service;
     
     // ============ Modifiers ============
     
@@ -118,60 +69,13 @@ contract ChainlinkFeedReactor is AbstractReactive {
     
     /**
      * @notice Constructor for ChainlinkFeedReactor
-     * @param _service Address of Reactive Network's system contract
-     * @dev The system contract address is provided by Reactive Network
-     *      For testnet (Lasna), check Reactive Network documentation for the address
+     * @param _service Address of Reactive Network's system contract (required)
+     * @dev System contract address must be provided for subscriptions to work
      */
     constructor(address _service) payable {
-        if (_service != address(0)) {
-            service = ISystemContract(payable(_service));
-        }
-        owner = msg.sender;
-        vm = (_service == address(0));
-    }
-    
-    // ============ System Contract Management ============
-    
-    /**
-     * @notice Set the system contract address (if not set during deployment)
-     * @param _service Address of Reactive Network's system contract
-     * @dev Allows setting system contract after deployment
-     *      Useful if system contract address wasn't known at deployment time
-     */
-    function setSystemContract(address _service) external onlyOwner {
-        require(_service != address(0), "Invalid system contract address");
+        require(_service != address(0), "System contract address required");
         service = ISystemContract(payable(_service));
-        vm = false; // If system contract is set, we're on Reactive Network
-    }
-    
-    /**
-     * @notice Manually subscribe to events (if system contract was set after deployment)
-     * @param feedId The feed ID to subscribe for
-     * @dev Call this after setting system contract if feed was registered before system contract was set
-     */
-    function subscribeFeed(bytes32 feedId) external onlyOwner {
-        require(address(service) != address(0), "System contract not set");
-        FeedConfig memory config = feeds[feedId];
-        require(config.feedAddress != address(0), "Feed not registered");
-        
-        if (!vm && address(service) != address(0)) {
-            service.subscribe(
-                uint256(config.originChainId),
-                config.feedAddress,
-                uint256(ANSWER_UPDATED_TOPIC_0),
-                REACTIVE_IGNORE,
-                REACTIVE_IGNORE,
-                REACTIVE_IGNORE
-            );
-        }
-    }
-    
-    /**
-     * @notice Get system contract address
-     * @return The system contract address (address(0) if not set)
-     */
-    function getSystemContract() external view returns (address) {
-        return address(service);
+        owner = msg.sender;
     }
     
     // ============ Feed Management ============
@@ -218,25 +122,23 @@ contract ChainlinkFeedReactor is AbstractReactive {
             heartbeat: heartbeat,
             lastSentPrice: 0,
             lastSentTime: 0,
+            lastProcessedRoundId: 0,
             active: true
         });
         
         feedIds.push(feedId);
         
         // Subscribe to Chainlink's AnswerUpdated events through Reactive Network's system contract
-        // Only subscribe if deployed on Reactive Network (not in ReactVM)
         // This is the MAGIC - Reactive Network will now automatically
         // call react() whenever this event fires!
-        if (!vm && address(service) != address(0)) {
-            service.subscribe(
-                uint256(originChainId),              // Which chain to monitor
-                feedAddress,                         // Which contract to monitor
-                uint256(ANSWER_UPDATED_TOPIC_0),     // Which event to monitor (AnswerUpdated)
-                REACTIVE_IGNORE,                     // topic1 (current price - we read from data)
-                REACTIVE_IGNORE,                     // topic2 (roundId - we read from data)
-                REACTIVE_IGNORE                      // topic3 (not used)
-            );
-        }
+        service.subscribe(
+            uint256(originChainId),              // Which chain to monitor
+            feedAddress,                         // Which contract to monitor
+            uint256(ANSWER_UPDATED_TOPIC_0),     // Which event to monitor (AnswerUpdated)
+            REACTIVE_IGNORE,                     // topic1 (current price - we read from data)
+            REACTIVE_IGNORE,                     // topic2 (roundId - we read from data)
+            REACTIVE_IGNORE                      // topic3 (not used)
+        );
         
         emit FeedRegistered(
             feedId,
@@ -274,35 +176,95 @@ contract ChainlinkFeedReactor is AbstractReactive {
     
     // ============ Reactive Logic (Core Functionality) ============
     
+    function pollFeed(
+        bytes32 feedId,
+        uint80 roundId,
+        int256 answer,
+        uint256 updatedAt,
+        uint80 answeredInRound
+    ) external reactorOnly {
+        FeedConfig storage config = feeds[feedId];
+        FeedMetrics storage m = metrics[feedId];
+        
+        // Validate feed exists and is active
+        require(config.active && config.feedAddress != address(0), "Feed not active");
+        
+        // Check if this is a new round (compare roundId to avoid processing same round twice)
+        if (roundId <= config.lastProcessedRoundId) {
+            // Already processed this round or older round
+            return;
+        }
+        
+        // Update last processed round ID
+        config.lastProcessedRoundId = roundId;
+        
+        // Update metrics (treat as event received)
+        m.totalEventsReceived++;
+        
+        // Validate price data
+        if (answer <= 0) {
+            emit UpdateSkipped(feedId, roundId, answer, SkipReason.InvalidData);
+            m.updatesSkipped++;
+            return;
+        }
+        
+        // Determine if we should forward this update
+        (bool shouldForward, UpdateReason reason) = _shouldForward(
+            config,
+            answer,
+            updatedAt
+        );
+        
+        if (!shouldForward) {
+            emit UpdateSkipped(
+                feedId, 
+                roundId, 
+                answer,
+                _getSkipReason(config, answer, updatedAt)
+            );
+            m.updatesSkipped++;
+            m.estimatedGasSaved += 200000; // Estimated gas saved per skip
+            return;
+        }
+        
+        // Forward update to destination chain
+        _forwardUpdate(
+            config,
+            feedId,
+            roundId,
+            answer,
+            updatedAt,
+            reason
+        );
+        
+        // Update state
+        config.lastSentPrice = answer;
+        config.lastSentTime = block.timestamp;
+        
+        // Update metrics
+        m.updatesForwarded++;
+        if (reason == UpdateReason.DeviationThreshold) {
+            m.deviationTriggered++;
+        } else if (reason == UpdateReason.HeartbeatExpired) {
+            m.heartbeatTriggered++;
+        }
+    }
+    
     /**
-     * @notice Called AUTOMATICALLY by Reactive Network when subscribed event fires
+     * @notice Called AUTOMATICALLY by Reactive Network system contract when subscribed event fires
      * @dev This is the heart of the reactive paradigm - no manual triggering needed!
-     * @param chain Origin chain ID where event occurred
-     * @param _contract Address that emitted the event (Chainlink aggregator)
-     * @param topic_0 Event signature (AnswerUpdated)
-     * @param topic_1 Indexed parameter 1 (current price)
-     * @param topic_2 Indexed parameter 2 (roundId)
-     * @param data Non-indexed data (updatedAt timestamp)
-     * @param block_number Block number where event occurred
-     * @param op_code Operation code (not used)
+     * @dev The system contract on Reactive Network calls this, not the VM instance
+     * @dev Matches IReactive interface signature
+     * @param log LogRecord containing event information from Reactive Network
      */
-    function react(
-        uint256 chain,
-        address _contract,
-        uint256 topic_0,
-        uint256 topic_1,
-        uint256 topic_2,
-        bytes calldata data,
-        uint256 block_number,
-        uint256 op_code
-    ) external vmOnly override {
-        // Decode event parameters
-        int256 currentPrice = int256(topic_1);
-        uint80 roundId = uint80(topic_2);
-        uint256 updatedAt = abi.decode(data, (uint256));
+    function react(IReactive.LogRecord calldata log) external reactorOnly override {
+        // Extract event parameters from LogRecord
+        int256 currentPrice = int256(log.topic_1);
+        uint80 roundId = uint80(log.topic_2);
+        uint256 updatedAt = abi.decode(log.data, (uint256));
         
         // Identify which feed this event is for
-        bytes32 feedId = keccak256(abi.encodePacked(uint64(chain), _contract));
+        bytes32 feedId = keccak256(abi.encodePacked(uint64(log.chain_id), log._contract));
         FeedConfig storage config = feeds[feedId];
         FeedMetrics storage m = metrics[feedId];
         
@@ -449,10 +411,11 @@ contract ChainlinkFeedReactor is AbstractReactive {
         );
         
         // Emit callback - Reactive Network handles delivery
+        // Matches IReactive.Callback event signature
         emit Callback(
-            config.destinationChainId,
+            uint256(config.destinationChainId),
             config.destinationProxy,
-            0, // No ETH value
+            uint64(1000000), // Gas limit for callback (1M gas)
             payload
         );
         
@@ -550,5 +513,26 @@ contract ChainlinkFeedReactor is AbstractReactive {
     function transferOwnership(address newOwner) external onlyOwner {
         require(newOwner != address(0), "Invalid address");
         owner = newOwner;
+    }
+
+    // ============ IPayer Implementation ============
+
+    /**
+     * @notice Pay for Reactive Network services
+     * @dev Called by Reactive Network system contract when payment is due
+     * @param amount Amount owed for reactive transactions and callbacks
+     */
+    function pay(uint256 amount) external override {
+        // Reactive Network will handle payment logic
+        // This is a required function from IPayer interface
+        // In production, ensure contract has sufficient balance
+    }
+
+    /**
+     * @notice Allow contract to receive funds for operational expenses
+     * @dev Required by IPayer interface for Reactive Network to fund the contract
+     */
+    receive() external payable override {
+        // Contract can receive ETH for paying Reactive Network fees
     }
 }
