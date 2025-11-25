@@ -4,20 +4,6 @@ pragma solidity ^0.8.19;
 
 import "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 
-
-/**
- * @title ProductionFeedProxy
- * @notice Production-grade mirrored Chainlink price feed for destination chains
- * @dev Implements AggregatorV3Interface with security, efficiency, and monitoring
- * 
- * Key Features:
- * - Gas-optimized storage layout
- * - Staleness protection with configurable heartbeat
- * - Historical round data storage
- * - Emergency pause mechanism
- * - Comprehensive event logging
- * - Multi-sender support with role-based access
- */
 contract FeedProxy is AggregatorV3Interface {
     
   
@@ -29,11 +15,9 @@ contract FeedProxy is AggregatorV3Interface {
         uint32 updatedAt;         // 4 bytes (timestamp until year 2106)
         int256 answer;            // 32 bytes (separate slot)
     }
-    
-    // Immutable feed metadata
     uint8 private immutable _decimals;
     string private _description;
-    uint256 private immutable _heartbeat; // Max time between updates
+    uint256 private immutable _heartbeat;
     
     // Current state
     RoundData private _latestRound;
@@ -112,14 +96,6 @@ contract FeedProxy is AggregatorV3Interface {
     
     // ============ Core Update Function ============
     
-    /**
-     * @notice Update price data from cross-chain message
-     * @dev Called by authorized cross-chain message receiver
-     * @param roundId Round identifier from source chain
-     * @param answer Price value (must be positive)
-     * @param updatedAt Timestamp when answer was computed
-     * @param answeredInRound Round in which answer was computed
-     */
     function updateRoundData(
         uint80 roundId,
         int256 answer,
@@ -132,7 +108,7 @@ contract FeedProxy is AggregatorV3Interface {
         if (roundId <= _latestRound.roundId) revert InvalidRound();
         if (answer <= 0) revert InvalidAnswer();
         
-        // Staleness check - reject if data is too old
+
         uint256 timeSinceUpdate = block.timestamp - updatedAt;
         if (timeSinceUpdate > _heartbeat * 2) {
             emit StaleDataRejected(roundId, timeSinceUpdate);

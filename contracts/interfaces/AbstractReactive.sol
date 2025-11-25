@@ -12,11 +12,12 @@ abstract contract AbstractReactive {
     uint256 constant REACTIVE_IGNORE = 0xa65f96fc951c35ead38878e0f0b7a3c744a6f5ccc1476b313353ce31712313ad;
 
     /**
-     * @notice Modifier to ensure only Reactive Network VM can call react()
-     * @dev This is a placeholder - in production, Reactive Network would implement proper access control
+     * @notice Modifier to ensure only Reactive Network system contract can call react()
+     * @dev Reactive Network's system contract calls react() when subscribed events occur
+     *      This is different from vmOnly - the system contract on the network instance calls this
      */
-    modifier vmOnly() {
-        // In production, this would check that msg.sender is the Reactive Network VM
+    modifier reactorOnly() {
+        // In production, Reactive Network's system contract will be the msg.sender
         // For now, we allow any caller (will be restricted by Reactive Network in production)
         _;
     }
@@ -44,26 +45,10 @@ abstract contract AbstractReactive {
     }
 
     /**
-     * @notice Called by Reactive Network VM when a subscribed event is detected
-     * @param chain The chain ID where the event originated
-     * @param _contract The address of the contract that emitted the event
-     * @param topic_0 The first indexed topic (event signature)
-     * @param topic_1 The second indexed topic
-     * @param topic_2 The third indexed topic
-     * @param data The non-indexed event data (ABI encoded)
-     * @param block_number The block number where the event occurred
-     * @param op_code The operation code
-     * @dev Must be implemented by child contracts with vmOnly modifier
+     * @notice LogRecord structure matching Reactive Network's IReactive interface
+     * @dev Imported from IReactive for convenience
      */
-    function react(
-        uint256 chain,
-        address _contract,
-        uint256 topic_0,
-        uint256 topic_1,
-        uint256 topic_2,
-        bytes calldata data,
-        uint256 block_number,
-        uint256 op_code
-    ) external virtual;
+    // Note: LogRecord is defined in IReactive interface
+    // Child contracts should import IReactive to access LogRecord type
 }
 

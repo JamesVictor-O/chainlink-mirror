@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { ethers } from "ethers";
-import FeedProxyAbi from "../artifacts/contracts/FeedProxy.sol/FeedProxy.json";
+import FeedProxyAbi from "./abis/FeedProxy.json";
+import { CONFIG } from "./config";
 
-const FEED_PROXY_ADDRESS = "YOUR_DEPLOYED_FEED_PROXY_ADDRESS";
+const FEED_PROXY_ADDRESS = CONFIG.DESTINATION_CHAIN.feedProxyAddress;
 
 export default function FeedProxyViewer() {
   const [price, setPrice] = useState<string>("0");

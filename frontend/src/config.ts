@@ -23,7 +23,7 @@ export const CONFIG = {
       "https://data-seed-prebsc-1-s1.binance.org:8545",
     ],
     explorer: "https://testnet.bscscan.com",
-    feedProxyAddress: "0xC71C22d41dbB39083B219e89A755E4Df55931A60", // Your deployed FeedProxy
+    feedProxyAddress: "0x411fe7b4691733b69bff5b967b1d2dc5dd39e6aa", // Your deployed FeedProxy
   },
 
   // Reactive Network - ChainlinkFeedReactor
@@ -32,7 +32,7 @@ export const CONFIG = {
     chainId: 5318007,
     rpcUrl: "https://lasna-rpc.rnk.dev",
     explorer: "https://lasna.reactscan.io",
-    reactorAddress: "0xbb0043babcc6be0a6c72415ee8e6221812534311", // Deployed reactor
+    reactorAddress: "0x7FcfD3947A638377c37f445A794c1Ec0590c05f3", // Deployed reactor (with pollFeed support)
   },
 
   // Refresh interval in milliseconds
