@@ -32,7 +32,7 @@ export const CONFIG = {
     chainId: 5318007,
     rpcUrl: "https://lasna-rpc.rnk.dev",
     explorer: "https://lasna.reactscan.io",
-    reactorAddress: "0x7FcfD3947A638377c37f445A794c1Ec0590c05f3", // Deployed reactor (with pollFeed support)
+    reactorAddress: "0x056D80772b3C6270d7297CEcaF20185e89a8E70C", // Deployed reactor (with pollFeed support)
   },
 
   // Refresh interval in milliseconds
