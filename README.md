@@ -2,10 +2,9 @@
 
 ## Overview
 
-**Chainlink Mirror** is a cross-chain price feed solution built to demonstrate the power of **Reactive Smart Contracts** in EVM-compatible networks.  
-It mirrors official Chainlink price feeds from an **origin chain** to a **destination chain**, exposing a `AggregatorV3Interface`-compatible interface for downstream applications.
-
-Unlike traditional Chainlink Automation, this project showcases a fully **on-chain event-driven architecture** using **Reactive Network smart contracts**. This allows automated reactions to cross-chain events without relying on off-chain triggers.
+Chainlink Mirror is a cross-chain price feed solution built to demonstrate how a **cron-driven poll** and **reactive contracts** can mirror a canonical Chainlink feed onto another chain that lacks native coverage.  
+We pull `latestRoundData()` from Sepolia, run the reactor's deviation/heartbeat logic (`pollFeed()`), and—when an update is warranted—write the data directly to a BNB Testnet `FeedProxy` that exposes `AggregatorV3Interface`.  
+This delivers an on-chain, audit-friendly mirror without relying on centralized relayers or off-chain automation.
 
 ---
 
@@ -22,41 +21,41 @@ By implementing cross-chain oracle mirroring, this project serves as a **real-wo
 
 ## Flow Overview
 
-Origin Chain (Sepolia)
-┌───────────────────────────┐
-│ Chainlink ETH/USD Feed │
-│ Emits AnswerUpdated event │
-└──────────────┬────────────┘
-│
-▼
-Reactive Network (Your RSC)
-┌───────────────────────────┐
-│ ChainlinkFeedReactor │
-│ react() is triggered │
-│ Processes and forwards │
-└──────────────┬────────────┘
-▼
-Destination Chain (Base Sepolia)
-┌───────────────────────────┐
-│ FeedProxy receives update │
-│ latestRoundData() updated │
-└──────────────┬────────────┘
-▼
-Applications query price → DeFi logic executed
+1. **Origin chain (Sepolia)**
+   - Cron job reads `latestRoundData()` from the official Chainlink ETH/USD feed.
+   - Captures `roundId`, `answer`, `updatedAt`, `answeredInRound`, etc.
+2. **Reactive decision engine (Lasna)**
+   - The call goes to `ChainlinkFeedReactor.pollFeed()`, which enforces deviation/heartbeat thresholds and tracks metrics (`totalEventsReceived`, `updatesForwarded/skipped`).
+   - It returns whether the current round should be forwarded to the destination.
+3. **Destination chain (BNB Testnet FeedProxy)**
+   - If the reactor says “forward,” the cron job calls `FeedProxy.updateRoundData(...)` directly with the same parameters.
+   - FeedProxy stores the round data and implements `latestRoundData()` so consumers can read it like a native Chainlink feed.
+4. **Applications**
+   - Read from `FeedProxy.latestRoundData()` and consume a mirrored, AggregatorV3-compatible price.
+
+### Architecture Diagram
+
+```
+ Sepolia Chainlink Feed
+     └──> Cron job (`poll-chainlink-feed.ts`)
+             └──> `reactor.pollFeed()`
+                     ├─> decides whether to forward
+                     └─> tracks metrics (`FeedConfig`, `FeedMetrics`)
+                             if forward:
+                             └──> BNB FeedProxy (`updateRoundData()`)
+                                     └──> AggregatorV3 data for frontend/dApps
+```
 
 ## Features
 
-- **FeedProxy Contract**  
-  Stores round data from the origin chain and exposes `latestRoundData()` for consumption by dApps.
-
+- **Cron-driven polling pipeline**  
+  Polls Sepolia's feed on a schedule, runs deviation/heartbeat logic in `pollFeed()`, and decides when to mirror the update.
 - **ChainlinkFeedReactor (Reactive Smart Contract)**  
-  Listens for events from the origin chain feed, processes data, and forwards updates to the destination chain.
-
-- **Minimal React Frontend**  
-  Visualizes round data, latest price, and allows simulation of feed updates.
-
-- **Cross-Chain Event Handling**  
-  Demonstrates a fully on-chain workflow that reacts automatically to updates from the origin chain.
+  Tracks configuration/metrics and acts as the authority for forwarding decisions.
+- **FeedProxy Contract**  
+  Stores the mirrored round data and exposes `latestRoundData()` so BNB apps can consume it.
+- **Proof-of-worked example**  
+  Includes a Foundry smoke test to simulate the full pipeline and a React dashboard to visualize the origin/destination data.
 
 ---
 
@@ -66,19 +65,13 @@ Applications query price → DeFi logic executed
 
 1. **FeedProxy (Destination Chain)**
 
-   - Stores mirrored feed data
-   - Implements `AggregatorV3Interface`
-   - Provides `latestRoundData()` for apps
+   - Stores the mirrored round data and exposes `latestRoundData()`.
+   - Implements `AggregatorV3Interface` so downstream apps can consume it unchanged.
 
-2. **ChainlinkFeedReactor (Reactive Smart Contract)**
-   ```solidity
-   function react(uint256 roundId, int256 answer, uint256 updatedAt) external {
-       // Receives event from origin feed
-       // Processes and validates data
-       // Sends callback to FeedProxy
-   }
-                             └─────────────────┘
-   ```
+2. **ChainlinkFeedReactor (Reactive Decision Engine)**
+   - `pollFeed()` checks deviation, heartbeat, and metrics.
+   - The cron script calls `pollFeed()` to decide whether to forward.
+   - It keeps `FeedConfig` + `FeedMetrics` so you can audit how many updates were skipped or forwarded.
 
 chainlink-mirror/
 ├── contracts/ # Solidity contracts
@@ -104,7 +97,7 @@ chainlink-mirror/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/chainlink-mirror.git
+git clone https://github.com/JamesVictor-0/chainlink-mirror.git
 cd chainlink-mirror
 
 npm install

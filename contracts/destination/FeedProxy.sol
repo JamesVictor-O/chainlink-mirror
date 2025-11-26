@@ -109,9 +109,9 @@ contract FeedProxy is AggregatorV3Interface {
         if (answer <= 0) revert InvalidAnswer();
         
 
-        uint256 timeSinceUpdate = block.timestamp - updatedAt;
-        if (timeSinceUpdate > _heartbeat * 2) {
-            emit StaleDataRejected(roundId, timeSinceUpdate);
+        uint256 secondsSinceUpdate = block.timestamp - updatedAt;
+        if (secondsSinceUpdate > _heartbeat * 2) {
+            emit StaleDataRejected(roundId, secondsSinceUpdate);
             revert StaleData();
         }
         
