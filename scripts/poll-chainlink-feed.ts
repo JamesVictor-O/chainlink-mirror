@@ -1,4 +1,5 @@
 
+
 import { createPublicClient, http, createWalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { defineChain } from "viem";
@@ -143,9 +144,6 @@ async function main() {
         BigInt(updatedAt.toString()),
         BigInt(answeredInRound.toString()),
       ],
-      gas: 500000n,
-      maxFeePerGas: 1000000000n, // 1 gwei
-      maxPriorityFeePerGas: 1000000000n,
     });
 
     console.log(`   Transaction: ${pollTx}`);
@@ -233,10 +231,13 @@ async function main() {
       "utf-8"
     )
   );
-  
+
   const destinationProvider = new ethers.JsonRpcProvider(bnbRpcUrl);
-  const destinationWallet = new ethers.Wallet(bnbPrivateKey, destinationProvider);
-  
+  const destinationWallet = new ethers.Wallet(
+    bnbPrivateKey,
+    destinationProvider
+  );
+
   const feedProxy = new ethers.Contract(
     destinationProxy,
     feedProxyAbi.abi,
@@ -250,20 +251,20 @@ async function main() {
       updatedAt,
       answeredInRound,
       {
-        gasLimit: 200000n
+        gasLimit: 200000n,
       }
     );
-    
+
     console.log(`   Transaction: ${updateTx.hash}`);
     console.log("   Waiting for confirmation...");
-    
+
     await updateTx.wait();
-    
+
     console.log("✅ FeedProxy updated successfully!\n");
-    
+
     // ✅ NEW: Confirm forward on reactor
     console.log("5️⃣  Confirming forward on reactor...");
-    
+
     // Determine reason from earlier check
     let updateReason = 0; // FirstUpdate
     const lastPrice = BigInt(config.lastSentPrice);
@@ -275,7 +276,7 @@ async function main() {
         updateReason = 2; // HeartbeatExpired
       }
     }
-    
+
     const confirmTx = await reactiveWalletClient.writeContract({
       address: reactorAddress as `0x${string}`,
       abi: reactorAbi,
@@ -286,23 +287,23 @@ async function main() {
         BigInt(updatedAt.toString()),
         updateReason,
       ],
-      gas: 300000n,
-      maxFeePerGas: 1000000000n, 
-      maxPriorityFeePerGas: 1000000000n,
     });
-    
+
     await reactivePublicClient.waitForTransactionReceipt({ hash: confirmTx });
     console.log("✅ Reactor state updated!\n");
-    
+
     console.log("🎉 Polling complete!\n");
   } catch (error: any) {
-    if (error.message?.includes("InvalidRound") || 
-        error.message?.includes("Paused")) {
+    if (
+      error.message?.includes("InvalidRound") ||
+      error.message?.includes("Paused")
+    ) {
       console.log("⚠️  FeedProxy rejected update:", error.message);
       return;
     }
     throw error;
   }
+}
 
 function shouldForward(
   config: any,
@@ -344,7 +345,6 @@ function calcDeviation(oldPrice: bigint, newPrice: bigint): bigint {
   const diff = newPrice > oldPrice ? newPrice - oldPrice : oldPrice - newPrice;
   return (diff * 10000n) / oldPrice;
 }
-}
 
 main().catch((error) => {
   console.error("❌ Poll job failed:", error);
@@ -379,7 +379,7 @@ main().catch((error) => {
 //   );
 
 //   console.log("1️⃣  Fetching from Chainlink (Sepolia)...");
-//   const [roundId, answer, , updatedAt, answeredInRound] = 
+//   const [roundId, answer, , updatedAt, answeredInRound] =
 //     await chainlinkFeed.latestRoundData();
 
 //   console.log("✅ Data:");
@@ -390,19 +390,19 @@ main().catch((error) => {
 //   // Step 2: Write to FeedProxy on destination
 //   const destProvider = new ethers.JsonRpcProvider(DESTINATION_RPC);
 //   const wallet = new ethers.Wallet(PRIVATE_KEY, destProvider);
-  
+
 //   const feedProxyAbi = [
 //     "function updateRoundData(uint80,int256,uint256,uint80)",
 //     "function latestRoundData() view returns (uint80,int256,uint256,uint256,uint80)",
 //   ];
-  
+
 //   const feedProxy = new ethers.Contract(DESTINATION_PROXY, feedProxyAbi, wallet);
 
 //   console.log("2️⃣  Checking if update needed...");
-  
+
 //   try {
 //     const [lastRoundId] = await feedProxy.latestRoundData();
-    
+
 //     if (BigInt(roundId.toString()) <= lastRoundId) {
 //       console.log("⏭️  Already up to date. Skipping.\n");
 //       return;
@@ -422,7 +422,7 @@ main().catch((error) => {
 
 //   console.log(`   TX: ${tx.hash}`);
 //   await tx.wait();
-  
+
 //   console.log("✅ Mirror updated successfully!\n");
 //   console.log("🎉 Complete!\n");
 // }
