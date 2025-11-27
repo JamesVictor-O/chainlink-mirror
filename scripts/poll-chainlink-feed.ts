@@ -1,15 +1,5 @@
-/**
- * Polls Sepolia's Chainlink feed, runs reactor decision logic, and writes to FeedProxy.
- *
- * Required env:
- *   REACTOR_ADDRESS
- *   ORIGIN_CHAIN_ID
- *   FEED_ADDRESS
- *   REACTIVE_PRIVATE_KEY
- *   DESTINATION_PROXY
- *   BNB_RPC_URL
- *   BNB_PRIVATE_KEY
- */
+
+
 import { createPublicClient, http, createWalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { defineChain } from "viem";
@@ -228,91 +218,91 @@ async function main() {
   }
 
   // Step 5: Forward to FeedProxy on destination chain
-   if (!destinationProxy || !bnbRpcUrl || !bnbPrivateKey) {
-     console.warn("⚠️  Missing destination settings; cannot forward update.");
-     return;
-   }
+  if (!destinationProxy || !bnbRpcUrl || !bnbPrivateKey) {
+    console.warn("⚠️  Missing destination settings; cannot forward update.");
+    return;
+  }
 
-   console.log("\n4️⃣  Forwarding update to FeedProxy on destination chain...");
+  console.log("\n4️⃣  Forwarding update to FeedProxy on destination chain...");
 
-   const feedProxyAbi = JSON.parse(
-     fs.readFileSync(
-       path.join(process.cwd(), "frontend/src/abis/FeedProxy.json"),
-       "utf-8"
-     )
-   );
+  const feedProxyAbi = JSON.parse(
+    fs.readFileSync(
+      path.join(process.cwd(), "frontend/src/abis/FeedProxy.json"),
+      "utf-8"
+    )
+  );
 
-   const destinationProvider = new ethers.JsonRpcProvider(bnbRpcUrl);
-   const destinationWallet = new ethers.Wallet(
-     bnbPrivateKey,
-     destinationProvider
-   );
+  const destinationProvider = new ethers.JsonRpcProvider(bnbRpcUrl);
+  const destinationWallet = new ethers.Wallet(
+    bnbPrivateKey,
+    destinationProvider
+  );
 
-   const feedProxy = new ethers.Contract(
-     destinationProxy,
-     feedProxyAbi.abi,
-     destinationWallet
-   );
+  const feedProxy = new ethers.Contract(
+    destinationProxy,
+    feedProxyAbi.abi,
+    destinationWallet
+  );
 
-   try {
-     const updateTx = await feedProxy.updateRoundData(
-       roundId,
-       answer,
-       updatedAt,
-       answeredInRound,
-       {
-         gasLimit: 200000n,
-       }
-     );
+  try {
+    const updateTx = await feedProxy.updateRoundData(
+      roundId,
+      answer,
+      updatedAt,
+      answeredInRound,
+      {
+        gasLimit: 200000n,
+      }
+    );
 
-     console.log(`   Transaction: ${updateTx.hash}`);
-     console.log("   Waiting for confirmation...");
+    console.log(`   Transaction: ${updateTx.hash}`);
+    console.log("   Waiting for confirmation...");
 
-     await updateTx.wait();
+    await updateTx.wait();
 
-     console.log("✅ FeedProxy updated successfully!\n");
+    console.log("✅ FeedProxy updated successfully!\n");
 
-     // ✅ NEW: Confirm forward on reactor
-     console.log("5️⃣  Confirming forward on reactor...");
+    // ✅ NEW: Confirm forward on reactor
+    console.log("5️⃣  Confirming forward on reactor...");
 
-     // Determine reason from earlier check
-     let updateReason = 0; // FirstUpdate
-     const lastPrice = BigInt(config.lastSentPrice);
-     if (lastPrice !== 0n) {
-       const deviation = calcDeviation(lastPrice, BigInt(answer.toString()));
-       if (deviation >= BigInt(config.deviationThreshold)) {
-         updateReason = 1; // DeviationThreshold
-       } else {
-         updateReason = 2; // HeartbeatExpired
-       }
-     }
+    // Determine reason from earlier check
+    let updateReason = 0; // FirstUpdate
+    const lastPrice = BigInt(config.lastSentPrice);
+    if (lastPrice !== 0n) {
+      const deviation = calcDeviation(lastPrice, BigInt(answer.toString()));
+      if (deviation >= BigInt(config.deviationThreshold)) {
+        updateReason = 1; // DeviationThreshold
+      } else {
+        updateReason = 2; // HeartbeatExpired
+      }
+    }
 
-     const confirmTx = await reactiveWalletClient.writeContract({
-       address: reactorAddress as `0x${string}`,
-       abi: reactorAbi,
-       functionName: "confirmForward",
-       args: [
-         feedId,
-         BigInt(answer.toString()),
-         BigInt(updatedAt.toString()),
-         updateReason,
-       ],
-     });
+    const confirmTx = await reactiveWalletClient.writeContract({
+      address: reactorAddress as `0x${string}`,
+      abi: reactorAbi,
+      functionName: "confirmForward",
+      args: [
+        feedId,
+        BigInt(answer.toString()),
+        BigInt(updatedAt.toString()),
+        updateReason,
+      ],
+    });
 
-     await reactivePublicClient.waitForTransactionReceipt({ hash: confirmTx });
-     console.log("✅ Reactor state updated!\n");
+    await reactivePublicClient.waitForTransactionReceipt({ hash: confirmTx });
+    console.log("✅ Reactor state updated!\n");
 
-     console.log("🎉 Polling complete!\n");
-   } catch (error: any) {
-     if (
-       error.message?.includes("InvalidRound") ||
-       error.message?.includes("Paused")
-     ) {
-       console.log("⚠️  FeedProxy rejected update:", error.message);
-       return;
-     }
-     throw error;
-   }
+    console.log("🎉 Polling complete!\n");
+  } catch (error: any) {
+    if (
+      error.message?.includes("InvalidRound") ||
+      error.message?.includes("Paused")
+    ) {
+      console.log("⚠️  FeedProxy rejected update:", error.message);
+      return;
+    }
+    throw error;
+  }
 }
 
 function shouldForward(
@@ -360,3 +350,81 @@ main().catch((error) => {
   console.error("❌ Poll job failed:", error);
   process.exit(1);
 });
+
+// Simple direct mirroring for demo (bypasses slow RNK testnet)
+// import { ethers } from "ethers";
+
+// async function main() {
+//   console.log("\n🔄 Direct Chainlink Feed Mirror");
+//   console.log("=================================\n");
+
+//   // Config
+//   const ORIGIN_RPC = "https://ethereum-sepolia-rpc.publicnode.com";
+//   const FEED_ADDRESS = "0x694AA1769357215DE4FAC081bf1f309aDC325306";
+//   const DESTINATION_RPC = process.env.BNB_RPC_URL;
+//   const DESTINATION_PROXY = process.env.DESTINATION_PROXY;
+//   const PRIVATE_KEY = process.env.BNB_PRIVATE_KEY;
+
+//   if (!DESTINATION_RPC || !DESTINATION_PROXY || !PRIVATE_KEY) {
+//     console.error("Missing env vars: BNB_RPC_URL, DESTINATION_PROXY, BNB_PRIVATE_KEY");
+//     process.exit(1);
+//   }
+
+//   // Step 1: Read from Chainlink on Sepolia
+//   const originProvider = new ethers.JsonRpcProvider(ORIGIN_RPC);
+//   const chainlinkFeed = new ethers.Contract(
+//     FEED_ADDRESS,
+//     ["function latestRoundData() view returns (uint80,int256,uint256,uint256,uint80)"],
+//     originProvider
+//   );
+
+//   console.log("1️⃣  Fetching from Chainlink (Sepolia)...");
+//   const [roundId, answer, , updatedAt, answeredInRound] =
+//     await chainlinkFeed.latestRoundData();
+
+//   console.log("✅ Data:");
+//   console.log(`   Round: ${roundId}`);
+//   console.log(`   Price: $${ethers.formatUnits(answer, 8)}`);
+//   console.log(`   Updated: ${new Date(Number(updatedAt) * 1000).toISOString()}\n`);
+
+//   // Step 2: Write to FeedProxy on destination
+//   const destProvider = new ethers.JsonRpcProvider(DESTINATION_RPC);
+//   const wallet = new ethers.Wallet(PRIVATE_KEY, destProvider);
+
+//   const feedProxyAbi = [
+//     "function updateRoundData(uint80,int256,uint256,uint80)",
+//     "function latestRoundData() view returns (uint80,int256,uint256,uint256,uint80)",
+//   ];
+
+//   const feedProxy = new ethers.Contract(DESTINATION_PROXY, feedProxyAbi, wallet);
+
+//   console.log("2️⃣  Checking if update needed...");
+
+//   try {
+//     const [lastRoundId] = await feedProxy.latestRoundData();
+
+//     if (BigInt(roundId.toString()) <= lastRoundId) {
+//       console.log("⏭️  Already up to date. Skipping.\n");
+//       return;
+//     }
+//   } catch (e) {
+//     console.log("   (First update)\n");
+//   }
+
+//   console.log("3️⃣  Updating FeedProxy...");
+//   const tx = await feedProxy.updateRoundData(
+//     roundId,
+//     answer,
+//     updatedAt,
+//     answeredInRound,
+//     { gasLimit: 200000n }
+//   );
+
+//   console.log(`   TX: ${tx.hash}`);
+//   await tx.wait();
+
+//   console.log("✅ Mirror updated successfully!\n");
+//   console.log("🎉 Complete!\n");
+// }
+
+// main().catch(console.error);
